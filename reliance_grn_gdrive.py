@@ -254,7 +254,7 @@ HARDCODED_CONFIG = {
     },
     'drive_to_sheet': {
         'folder_id': '1oJsbr8Uq8BahFDUSUM98KMMu8pXRc5l5',
-        'sheet_id': '1AD2yYIzeHID0ND3mRTsFZ1LmSjgEX_Prt2uO69biLg0',
+        'sheet_id': '1AD2yYtzeHID0ND3mRTsFZ1LmSjgEX_Prt2uO69biLg0',
         'days_back': 7,
         'max_result': 1000
     }
