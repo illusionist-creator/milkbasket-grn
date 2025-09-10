@@ -265,7 +265,7 @@ class RelianceGRNProcessor:
                 flow = Flow.from_client_config(
                     client_config=creds_data,
                     scopes=self.drive_scopes,
-                    redirect_uri="https://your-app-url.streamlit.app/"  # Update this with your actual URL
+                    redirect_uri="https://milkbasket-grn.streamlit.app/"  # Update this with your actual URL
                 )
                 
                 # Generate authorization URL
