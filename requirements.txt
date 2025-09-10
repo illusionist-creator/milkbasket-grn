@@ -1,0 +1,50 @@
+# Core Streamlit and Web Framework
+streamlit
+
+# PDF Processing
+PyMuPDF
+fitz
+
+# Data Processing and Analysis
+pandas
+numpy
+openpyxl
+
+# Google API Dependencies
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+googleapis-common-protos
+
+# HTTP and Requests
+requests
+urllib3
+
+# Date and Time Processing
+python-dateutil
+
+# Regular Expressions (usually included in Python standard library)
+regex
+
+# Additional Utilities
+typing-extensions
+
+# Optional: For better performance and caching
+cachetools
+
+# Optional: For enhanced error handling and logging
+loguru
+
+# Security and Authentication
+cryptography
+pyopenssl
+
+# JSON handling (usually included in Python standard library)
+jsonschema
+
+# File handling utilities
+pathlib2
+
+# Optional: For development and debugging
+python-dotenv
