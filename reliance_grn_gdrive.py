@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Enhanced Reliance GRN Parser with Google Drive Integration
-Combines local PDF upload and Google Drive processing workflows
+Enhanced Reliance GRN Parser with Google Drive Integration and Google Sheets Output
+Separate workflows for Manual Upload and Google Drive processing with hardcoded config
 """
 
 import streamlit as st
@@ -88,6 +88,17 @@ st.markdown("""
     margin-bottom: 2rem;
 }
 
+.workflow-section {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 20px;
+    padding: 2.5rem;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    border: 2px solid rgba(102, 126, 234, 0.2);
+    margin-bottom: 2rem;
+    border-left: 6px solid #667eea;
+}
+
 .upload-zone {
     background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
     border: 2px dashed #667eea;
@@ -104,12 +115,6 @@ st.markdown("""
 }
 
 /* Metrics Cards */
-.metrics-container {
-    display: flex;
-    gap: 1rem;
-    margin: 2rem 0;
-}
-
 .metric-card {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(15px);
@@ -146,8 +151,25 @@ st.markdown("""
     letter-spacing: 0.5px;
 }
 
-/* Workflow Buttons */
-.workflow-btn {
+/* Section Headers */
+.section-header {
+    font-size: 2rem;
+    font-weight: 600;
+    color: #667eea;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 3px solid #667eea;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.section-icon {
+    font-size: 2.5rem;
+}
+
+/* Buttons */
+.primary-btn {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     border: none;
@@ -161,13 +183,12 @@ st.markdown("""
     margin: 0.5rem 0;
 }
 
-.workflow-btn:hover {
+.primary-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
     background: linear-gradient(135deg, #5a67d8 0%, #6b5b95 100%);
 }
 
-/* Drive workflow button */
 .drive-btn {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
     box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3) !important;
@@ -178,21 +199,25 @@ st.markdown("""
     box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4) !important;
 }
 
-/* Combined workflow button */
-.combined-btn {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
-    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3) !important;
+/* Status indicators */
+.status-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    display: inline-block;
+    margin: 0.5rem 0;
 }
 
-.combined-btn:hover {
-    background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important;
-    box-shadow: 0 8px 25px rgba(245, 158, 11, 0.4) !important;
-}
-
-/* Progress Bar */
-.stProgress .st-bo {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 10px;
+.status-warning {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    display: inline-block;
+    margin: 0.5rem 0;
 }
 
 /* Animation Classes */
@@ -211,21 +236,6 @@ st.markdown("""
     animation: fadeInUp 0.6s ease-out;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-    .main-title {
-        font-size: 2rem;
-    }
-    
-    .metrics-container {
-        flex-direction: column;
-    }
-    
-    .metric-card {
-        margin-bottom: 1rem;
-    }
-}
-
 /* Hide Streamlit Branding */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
@@ -233,24 +243,46 @@ footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
+# Hardcoded Configuration based on the image
+HARDCODED_CONFIG = {
+    'mail_to_drive': {
+        'folder_id': '1h1yU576532RpLNeVo_gIHEeu92gI0-K3',
+        'sender': 'DONOTREPLY@ril.com',
+        'search_term': 'GRN',
+        'days_back': 7,
+        'max_result': 1000
+    },
+    'drive_to_sheet': {
+        'folder_id': '1oJsbr8Uq8BahFDUSUM98KMMu8pXRc5I5',
+        'sheet_id': '1AD2yYIzeHID0ND3mRTsFZ1LmSjgEX_Prt2uO69biLg0',
+        'days_back': 7,
+        'max_result': 1000
+    }
+}
+
 class RelianceGRNProcessor:
     def __init__(self):
         self.drive_service = None
-        self.drive_scopes = ['https://www.googleapis.com/auth/drive.readonly']
+        self.sheets_service = None
+        self.scopes = [
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/spreadsheets'
+        ]
     
     def authenticate_from_secrets(self, progress_bar, status_text):
         """Authenticate using Streamlit secrets with web-based OAuth flow"""
         try:
-            status_text.text("Authenticating with Google Drive...")
+            status_text.text("Authenticating with Google Services...")
             progress_bar.progress(10)
             
             # Check for existing token in session state
             if 'oauth_token' in st.session_state:
                 try:
-                    creds = Credentials.from_authorized_user_info(st.session_state.oauth_token, self.drive_scopes)
+                    creds = Credentials.from_authorized_user_info(st.session_state.oauth_token, self.scopes)
                     if creds and creds.valid:
                         progress_bar.progress(50)
                         self.drive_service = build('drive', 'v3', credentials=creds)
+                        self.sheets_service = build('sheets', 'v4', credentials=creds)
                         progress_bar.progress(100)
                         status_text.text("Authentication successful!")
                         return True
@@ -264,7 +296,7 @@ class RelianceGRNProcessor:
                 # Configure for web application
                 flow = Flow.from_client_config(
                     client_config=creds_data,
-                    scopes=self.drive_scopes,
+                    scopes=self.scopes,
                     redirect_uri="https://milkbasket-grn.streamlit.app/"  # Update this with your actual URL
                 )
                 
@@ -284,6 +316,7 @@ class RelianceGRNProcessor:
                         
                         progress_bar.progress(50)
                         self.drive_service = build('drive', 'v3', credentials=creds)
+                        self.sheets_service = build('sheets', 'v4', credentials=creds)
                         progress_bar.progress(100)
                         status_text.text("Authentication successful!")
                         
@@ -295,28 +328,19 @@ class RelianceGRNProcessor:
                         return False
                 else:
                     # Show authorization link
-                    st.markdown("### Google Drive Authentication Required")
-                    st.markdown(f"[Authorize with Google Drive]({auth_url})")
-                    st.info("Click the link above to authorize access to Google Drive, you'll be redirected back automatically")
+                    st.markdown("### Google Services Authentication Required")
+                    st.markdown(f"[Authorize with Google Services]({auth_url})")
+                    st.info("Click the link above to authorize access to Google Drive and Sheets")
                     st.stop()
             else:
-                st.error("Google credentials missing in Streamlit secrets. Please add your Google OAuth2 credentials.")
-                st.markdown("""
-                **Setup Instructions:**
-                1. Go to [Google Cloud Console](https://console.cloud.google.com)
-                2. Create or select a project
-                3. Enable Google Drive API
-                4. Create OAuth2 credentials (Web application)
-                5. Add your Streamlit app URL to authorized redirect URIs
-                6. Add the credentials JSON to Streamlit secrets as `google.credentials_json`
-                """)
+                st.error("Google credentials missing in Streamlit secrets.")
                 return False
                 
         except Exception as e:
             st.error(f"Authentication failed: {str(e)}")
             return False
     
-    def list_drive_files(self, folder_id: str, days_back: int = 7) -> List[Dict]:
+    def list_drive_files(self, folder_id: str, days_back: int = 7, max_files: int = 1000) -> List[Dict]:
         """List PDF files in Drive folder"""
         try:
             if not folder_id:
@@ -331,21 +355,24 @@ class RelianceGRNProcessor:
             files = []
             page_token = None
             
-            while True:
+            while len(files) < max_files:
                 results = self.drive_service.files().list(
                     q=query,
                     fields="nextPageToken, files(id, name, createdTime, size)",
                     pageToken=page_token,
-                    orderBy="createdTime desc"
+                    orderBy="createdTime desc",
+                    pageSize=min(100, max_files - len(files))
                 ).execute()
                 
-                files.extend(results.get('files', []))
+                batch_files = results.get('files', [])
+                files.extend(batch_files)
+                
                 page_token = results.get('nextPageToken')
-                if not page_token:
+                if not page_token or len(batch_files) == 0:
                     break
             
             st.info(f"Found {len(files)} PDF files in Drive folder")
-            return files
+            return files[:max_files]
             
         except Exception as e:
             st.error(f"Failed to list Drive files: {str(e)}")
@@ -360,6 +387,107 @@ class RelianceGRNProcessor:
         except Exception as e:
             st.error(f"Failed to download file {file_id}: {str(e)}")
             return b""
+    
+    def append_to_sheet(self, sheet_id: str, data: List[Dict], progress_bar=None, status_text=None):
+        """Append data to Google Sheet"""
+        try:
+            if not data:
+                st.warning("No data to append to sheet")
+                return False
+            
+            if status_text:
+                status_text.text("Preparing data for Google Sheets...")
+            if progress_bar:
+                progress_bar.progress(10)
+            
+            # Convert data to DataFrame for easier manipulation
+            df = pd.DataFrame(data)
+            
+            # Get existing sheet headers to match column order
+            try:
+                sheet_metadata = self.sheets_service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                sheet_name = sheet_metadata['sheets'][0]['properties']['title']  # Use first sheet
+                
+                # Get existing headers
+                header_range = f"{sheet_name}!1:1"
+                header_result = self.sheets_service.spreadsheets().values().get(
+                    spreadsheetId=sheet_id, range=header_range
+                ).execute()
+                
+                existing_headers = header_result.get('values', [[]])[0] if header_result.get('values') else []
+                
+                if progress_bar:
+                    progress_bar.progress(30)
+                
+            except Exception as e:
+                st.warning(f"Could not read existing headers: {e}")
+                existing_headers = []
+                sheet_name = 'Sheet1'  # Default sheet name
+            
+            # Prepare data rows
+            if existing_headers:
+                # Reorder columns to match existing sheet
+                df_ordered = pd.DataFrame()
+                for header in existing_headers:
+                    if header in df.columns:
+                        df_ordered[header] = df[header]
+                    else:
+                        df_ordered[header] = ''  # Empty column for missing data
+                
+                # Add any new columns not in existing headers
+                for col in df.columns:
+                    if col not in existing_headers:
+                        df_ordered[col] = df[col]
+                
+                df = df_ordered
+            
+            if status_text:
+                status_text.text("Converting data to sheet format...")
+            if progress_bar:
+                progress_bar.progress(50)
+            
+            # Convert DataFrame to list of lists for Google Sheets API
+            values = df.fillna('').astype(str).values.tolist()
+            
+            # If no existing headers, add headers as first row
+            if not existing_headers:
+                headers = list(df.columns)
+                values.insert(0, headers)
+            
+            if status_text:
+                status_text.text("Uploading to Google Sheets...")
+            if progress_bar:
+                progress_bar.progress(70)
+            
+            # Append data to sheet
+            body = {
+                'values': values
+            }
+            
+            range_name = f"{sheet_name}!A:Z"  # Append to end of sheet
+            
+            result = self.sheets_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=range_name,
+                valueInputOption='USER_ENTERED',
+                insertDataOption='INSERT_ROWS',
+                body=body
+            ).execute()
+            
+            if progress_bar:
+                progress_bar.progress(100)
+            
+            if status_text:
+                status_text.text("✅ Data successfully uploaded to Google Sheets!")
+            
+            rows_added = result.get('updates', {}).get('updatedRows', 0)
+            st.success(f"Successfully added {rows_added} rows to Google Sheets!")
+            
+            return True
+            
+        except Exception as e:
+            st.error(f"Failed to append data to Google Sheets: {str(e)}")
+            return False
     
     def clean_text(self, text):
         """Clean extracted text"""
@@ -382,7 +510,7 @@ class RelianceGRNProcessor:
         metadata = {
             "GRN No": None, "GRN Date": None, "Vendor Invoice No": None, "PO No": None,
             "PO Date": None, "Consignee Location": None, "Truck No": None, "Challan No": None,
-            "Source File": source_filename
+            "Source File": source_filename, "Processing Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
         patterns = {
@@ -429,120 +557,70 @@ class RelianceGRNProcessor:
 # Session State Initialization
 if 'df_result' not in st.session_state:
     st.session_state.df_result = None
-if 'file_count' not in st.session_state:
-    st.session_state.file_count = 0
 if 'processing_complete' not in st.session_state:
     st.session_state.processing_complete = False
-if 'workflow_mode' not in st.session_state:
-    st.session_state.workflow_mode = None
-if 'drive_config' not in st.session_state:
-    st.session_state.drive_config = {
-        'folder_id': '',
-        'days_back': 30,
-        'max_files': 100
-    }
+if 'sheets_uploaded' not in st.session_state:
+    st.session_state.sheets_uploaded = False
 
 # Header Section
 st.markdown("""
 <div class="main-header animate-fade-in">
     <h1 class="main-title">📦 GRN Parser Pro+</h1>
-    <p class="main-subtitle">Transform your Goods Receipt Note PDFs into organized Excel data with local upload or Google Drive integration</p>
+    <p class="main-subtitle">Transform your Goods Receipt Note PDFs into organized data with automated Google Sheets integration</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Workflow Selection
+# Configuration Display
 st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-st.markdown("### 🚀 Choose Your Workflow")
-
-col1, col2, col3 = st.columns(3)
+st.markdown("### ⚙️ Current Configuration")
+col1, col2 = st.columns(2)
 
 with col1:
-    if st.button("📁 Local Upload Workflow", key="local_workflow", help="Upload PDF files directly from your computer"):
-        st.session_state.workflow_mode = "local"
+    st.markdown("**🔧 Mail to Drive Workflow:**")
+    st.code(f"""
+Folder ID: {HARDCODED_CONFIG['mail_to_drive']['folder_id']}
+Sender: {HARDCODED_CONFIG['mail_to_drive']['sender']}
+Search Term: {HARDCODED_CONFIG['mail_to_drive']['search_term']}
+Days Back: {HARDCODED_CONFIG['mail_to_drive']['days_back']}
+Max Results: {HARDCODED_CONFIG['mail_to_drive']['max_result']}
+    """)
 
 with col2:
-    if st.button("☁️ Google Drive Workflow", key="drive_workflow", help="Process PDF files from Google Drive"):
-        st.session_state.workflow_mode = "drive"
-
-with col3:
-    if st.button("🔄 Combined Workflow", key="combined_workflow", help="Upload locally AND process from Google Drive"):
-        st.session_state.workflow_mode = "combined"
+    st.markdown("**📊 Drive to Sheet Workflow:**")
+    st.code(f"""
+Folder ID: {HARDCODED_CONFIG['drive_to_sheet']['folder_id']}
+Sheet ID: {HARDCODED_CONFIG['drive_to_sheet']['sheet_id']}
+Days Back: {HARDCODED_CONFIG['drive_to_sheet']['days_back']}
+Max Results: {HARDCODED_CONFIG['drive_to_sheet']['max_result']}
+    """)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Workflow Configuration
-if st.session_state.workflow_mode in ["drive", "combined"]:
-    st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-    st.markdown("### ⚙️ Google Drive Configuration")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        folder_id = st.text_input(
-            "Google Drive Folder ID",
-            value=st.session_state.drive_config['folder_id'],
-            help="The ID of the Google Drive folder containing your PDF files",
-            placeholder="1ABC123def456ghi789..."
-        )
-    
-    with col2:
-        days_back = st.number_input(
-            "Days Back to Search",
-            value=st.session_state.drive_config['days_back'],
-            min_value=1,
-            max_value=365,
-            help="How many days back to search for files"
-        )
-    
-    with col3:
-        max_files = st.number_input(
-            "Max Files to Process",
-            value=st.session_state.drive_config['max_files'],
-            min_value=1,
-            max_value=500,
-            help="Maximum number of files to process"
-        )
-    
-    if st.button("Update Drive Settings"):
-        st.session_state.drive_config = {
-            'folder_id': folder_id,
-            'days_back': days_back,
-            'max_files': max_files
-        }
-        st.success("Drive settings updated!")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+# Create tabs for different workflows
+tab1, tab2 = st.tabs(["📁 Manual Upload", "☁️ Google Drive Processing"])
 
-# Execute Workflows
-if st.session_state.workflow_mode == "local":
-    # Local Upload Workflow (Original functionality)
-    st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
+# Tab 1: Manual Upload Workflow
+with tab1:
+    st.markdown('<div class="workflow-section animate-fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><span class="section-icon">📁</span>Manual Upload Workflow</div>', unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("""
-        <div class="upload-zone">
-            <h3 style="color: #667eea; margin-bottom: 1rem;">📁 Upload Your GRN PDFs</h3>
-            <p style="color: #64748b; margin-bottom: 1.5rem;">Select multiple PDF files to process them all at once</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        uploaded_files = st.file_uploader(
-            "Choose PDF files", 
-            type="pdf", 
-            accept_multiple_files=True,
-            label_visibility="collapsed"
-        )
+    st.markdown("""
+    <div class="upload-zone">
+        <h3 style="color: #667eea; margin-bottom: 1rem;">📄 Upload Your GRN PDFs</h3>
+        <p style="color: #64748b; margin-bottom: 1.5rem;">Select multiple PDF files to process them all at once</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    uploaded_files = st.file_uploader(
+        "Choose PDF files", 
+        type="pdf", 
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key="manual_upload"
+    )
     
     if uploaded_files:
         # File Metrics
-        st.session_state.file_count = len(uploaded_files)
-        
-        st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-        st.markdown("### 📊 Upload Summary")
-        
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -571,16 +649,12 @@ if st.session_state.workflow_mode == "local":
             </div>
             """, unsafe_allow_html=True)
         
-        st.markdown('</div>', unsafe_allow_html=True)
-        
         # Processing Section
-        st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-        
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 Process All PDFs", key="process_local_btn"):
+            if st.button("🚀 Process Manual PDFs", key="process_manual_btn", help="Process uploaded PDF files"):
                 processor = RelianceGRNProcessor()
-                with st.spinner("📄 Processing your files..."):
+                with st.spinner("🔄 Processing your files..."):
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     all_data = []
@@ -595,10 +669,11 @@ if st.session_state.workflow_mode == "local":
                             row = defaultdict(lambda: "")
                             row.update(metadata)
                             row["file_name"] = file.name
+                            row["source"] = "manual"
                             all_data.append(row)
                         else:
                             for item in items:
-                                row = {**metadata, **item, "file_name": file.name}
+                                row = {**metadata, **item, "file_name": file.name, "source": "manual"}
                                 all_data.append(row)
                         
                         progress_bar.progress((i + 1) / len(uploaded_files))
@@ -609,268 +684,111 @@ if st.session_state.workflow_mode == "local":
                     if all_data:
                         st.session_state.df_result = pd.DataFrame(all_data)
                         st.session_state.processing_complete = True
-                        st.success("🎉 All files processed successfully!")
+                        st.session_state.sheets_uploaded = False
+                        st.success("🎉 All manual files processed successfully!")
                     else:
                         st.session_state.df_result = pd.DataFrame()
                         st.warning("⚠️ No data could be extracted from the uploaded files.")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
-elif st.session_state.workflow_mode == "drive":
-    # Google Drive Workflow
+# Tab 2: Google Drive Workflow
+with tab2:
+    st.markdown('<div class="workflow-section animate-fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><span class="section-icon">☁️</span>Google Drive Processing Workflow</div>', unsafe_allow_html=True)
+    
     processor = RelianceGRNProcessor()
     
-    if not st.session_state.drive_config['folder_id']:
-        st.warning("Please configure Google Drive folder ID above to proceed.")
-    else:
-        st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-        st.markdown("### ☁️ Google Drive Authentication")
+    # Authentication Section
+    st.markdown("#### 🔐 Google Services Authentication")
+    auth_progress = st.progress(0)
+    auth_status = st.empty()
+    
+    if processor.authenticate_from_secrets(auth_progress, auth_status):
+        st.markdown('<div class="status-success">🔓 Authentication successful!</div>', unsafe_allow_html=True)
         
-        auth_progress = st.progress(0)
-        auth_status = st.empty()
+        # List files from Drive using hardcoded config
+        st.markdown("#### 📂 Files from Google Drive")
         
-        if processor.authenticate_from_secrets(auth_progress, auth_status):
-            st.success("🔑 Authentication successful!")
+        config = HARDCODED_CONFIG['drive_to_sheet']
+        
+        with st.spinner("📋 Loading files from Google Drive..."):
+            drive_files = processor.list_drive_files(
+                config['folder_id'],
+                config['days_back'],
+                config['max_result']
+            )
+        
+        if drive_files:
+            # Drive Files Metrics
+            col1, col2, col3, col4 = st.columns(4)
             
-            # List files from Drive
-            st.markdown("### 📂 Files from Google Drive")
+            with col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <span class="metric-value">{len(drive_files)}</span>
+                    <div class="metric-label">Drive Files Found</div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            with st.spinner("📋 Loading files from Google Drive..."):
-                drive_files = processor.list_drive_files(
-                    st.session_state.drive_config['folder_id'],
-                    st.session_state.drive_config['days_back']
-                )
+            with col2:
+                total_size = sum(int(f.get('size', 0)) for f in drive_files) / (1024 * 1024)
+                st.markdown(f"""
+                <div class="metric-card">
+                    <span class="metric-value">{total_size:.2f}</span>
+                    <div class="metric-label">Total Size (MB)</div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            if drive_files:
-                # Limit files if specified
-                if len(drive_files) > st.session_state.drive_config['max_files']:
-                    drive_files = drive_files[:st.session_state.drive_config['max_files']]
-                    st.info(f"Limited to {st.session_state.drive_config['max_files']} most recent files")
-                
-                # Drive Files Metrics
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <span class="metric-value">{len(drive_files)}</span>
-                        <div class="metric-label">Drive Files Found</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col2:
-                    total_size = sum(int(f.get('size', 0)) for f in drive_files) / (1024 * 1024)
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <span class="metric-value">{total_size:.2f}</span>
-                        <div class="metric-label">Total Size (MB)</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col3:
-                    oldest_file = min(drive_files, key=lambda x: x['createdTime'])['createdTime'][:10]
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <span class="metric-value">{oldest_file}</span>
-                        <div class="metric-label">Oldest File</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                # File List Preview
-                with st.expander("📋 Preview Drive Files", expanded=False):
-                    file_df = pd.DataFrame([
-                        {
-                            'Name': f['name'], 
-                            'Size (KB)': int(f.get('size', 0)) / 1024,
-                            'Created': f['createdTime'][:19].replace('T', ' ')
-                        } 
-                        for f in drive_files[:10]  # Show first 10
-                    ])
-                    st.dataframe(file_df, use_container_width=True)
-                    if len(drive_files) > 10:
-                        st.info(f"... and {len(drive_files) - 10} more files")
-                
-                # Process Drive Files
-                col1, col2, col3 = st.columns([1, 2, 1])
-                with col2:
-                    if st.button("☁️ Process Drive PDFs", key="process_drive_btn"):
-                        with st.spinner("📄 Processing files from Google Drive..."):
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            all_data = []
-                            
-                            for i, file in enumerate(drive_files):
-                                status_text.text(f"Processing: {file['name']}")
-                                
-                                # Download file from Drive
-                                pdf_bytes = processor.download_from_drive(file['id'])
-                                if pdf_bytes:
-                                    text = processor.extract_text_from_pdf(pdf_bytes)
-                                    metadata, items = processor.extract_grn_data(text, file['name'])
-                                    
-                                    if not items:
-                                        row = defaultdict(lambda: "")
-                                        row.update(metadata)
-                                        row["file_name"] = file['name']
-                                        row["drive_file_id"] = file['id']
-                                        all_data.append(row)
-                                    else:
-                                        for item in items:
-                                            row = {**metadata, **item, "file_name": file['name'], "drive_file_id": file['id']}
-                                            all_data.append(row)
-                                
-                                progress_bar.progress((i + 1) / len(drive_files))
-                                time.sleep(0.1)
-                            
-                            status_text.text("✅ Drive processing complete!")
-                            
-                            if all_data:
-                                st.session_state.df_result = pd.DataFrame(all_data)
-                                st.session_state.processing_complete = True
-                                st.success("🎉 All Drive files processed successfully!")
-                            else:
-                                st.session_state.df_result = pd.DataFrame()
-                                st.warning("⚠️ No data could be extracted from the Drive files.")
-            else:
-                st.warning("📂 No PDF files found in the specified Google Drive folder.")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-elif st.session_state.workflow_mode == "combined":
-    # Combined Workflow - Local Upload + Google Drive
-    processor = RelianceGRNProcessor()
-    
-    st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-    st.markdown("### 🔄 Combined Processing Workflow")
-    st.info("This workflow will process both locally uploaded files AND files from Google Drive")
-    
-    # Local Upload Section
-    st.markdown("#### 📁 Step 1: Upload Local Files (Optional)")
-    uploaded_files = st.file_uploader(
-        "Choose PDF files from your computer", 
-        type="pdf", 
-        accept_multiple_files=True
-    )
-    
-    # Google Drive Section
-    st.markdown("#### ☁️ Step 2: Configure Google Drive")
-    
-    if not st.session_state.drive_config['folder_id']:
-        st.warning("Please configure Google Drive folder ID in the configuration section above.")
-        drive_files = []
-        drive_authenticated = False
-    else:
-        # Authenticate with Google Drive
-        auth_progress = st.progress(0)
-        auth_status = st.empty()
-        
-        drive_authenticated = processor.authenticate_from_secrets(auth_progress, auth_status)
-        
-        if drive_authenticated:
-            st.success("🔐 Google Drive authentication successful!")
+            with col3:
+                oldest_file = min(drive_files, key=lambda x: x['createdTime'])['createdTime']
+                oldest_date = datetime.fromisoformat(oldest_file.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                st.markdown(f"""
+                <div class="metric-card">
+                    <span class="metric-value" style="font-size: 1.5rem;">{oldest_date}</span>
+                    <div class="metric-label">Oldest File Date</div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            with st.spinner("📋 Loading files from Google Drive..."):
-                drive_files = processor.list_drive_files(
-                    st.session_state.drive_config['folder_id'],
-                    st.session_state.drive_config['days_back']
-                )
-                
-                if len(drive_files) > st.session_state.drive_config['max_files']:
-                    drive_files = drive_files[:st.session_state.drive_config['max_files']]
-        else:
-            drive_files = []
-    
-    # Combined Metrics
-    if uploaded_files or drive_files:
-        st.markdown("#### 📊 Combined Processing Summary")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            local_count = len(uploaded_files) if uploaded_files else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <span class="metric-value">{local_count}</span>
-                <div class="metric-label">Local Files</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            drive_count = len(drive_files)
-            st.markdown(f"""
-            <div class="metric-card">
-                <span class="metric-value">{drive_count}</span>
-                <div class="metric-label">Drive Files</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            total_count = local_count + drive_count
-            st.markdown(f"""
-            <div class="metric-card">
-                <span class="metric-value">{total_count}</span>
-                <div class="metric-label">Total Files</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            # Calculate total size
-            local_size = sum(file.size for file in uploaded_files) / (1024 * 1024) if uploaded_files else 0
-            drive_size = sum(int(f.get('size', 0)) for f in drive_files) / (1024 * 1024)
-            total_size = local_size + drive_size
-            st.markdown(f"""
-            <div class="metric-card">
-                <span class="metric-value">{total_size:.1f}</span>
-                <div class="metric-label">Total Size (MB)</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Process Combined Files
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            if st.button("🔄 Process All Files (Local + Drive)", key="process_combined_btn"):
-                with st.spinner("🔄 Processing combined files..."):
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    all_data = []
-                    
-                    total_files = total_count
-                    processed_count = 0
-                    
-                    # Process local files first
-                    if uploaded_files:
-                        status_text.text("📁 Processing local files...")
-                        for file in uploaded_files:
-                            status_text.text(f"Processing local: {file.name}")
+            with col4:
+                newest_file = max(drive_files, key=lambda x: x['createdTime'])['createdTime']
+                newest_date = datetime.fromisoformat(newest_file.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                st.markdown(f"""
+                <div class="metric-card">
+                    <span class="metric-value" style="font-size: 1.5rem;">{newest_date}</span>
+                    <div class="metric-label">Newest File Date</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Display files table
+            files_df = pd.DataFrame(drive_files)
+            files_df['created_date'] = pd.to_datetime(files_df['createdTime']).dt.strftime('%Y-%m-%d %H:%M')
+            files_df['size_mb'] = (files_df['size'].astype(int) / (1024 * 1024)).round(2)
+            
+            display_df = files_df[['name', 'created_date', 'size_mb']].rename(columns={
+                'name': 'File Name',
+                'created_date': 'Created Date',
+                'size_mb': 'Size (MB)'
+            })
+            
+            st.dataframe(display_df, use_container_width=True, height=300)
+            
+            # Process Drive Files
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("🚀 Process Drive PDFs", key="process_drive_btn", help="Process files from Google Drive"):
+                    with st.spinner("📄 Processing Drive files..."):
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        all_data = []
+                        
+                        for i, file in enumerate(drive_files):
+                            status_text.text(f"Processing: {file['name']}")
                             
-                            text = processor.extract_text_from_pdf(file.read())
-                            metadata, items = processor.extract_grn_data(text, file.name)
-                            
-                            if not items:
-                                row = defaultdict(lambda: "")
-                                row.update(metadata)
-                                row["file_name"] = file.name
-                                row["source"] = "local"
-                                all_data.append(row)
-                            else:
-                                for item in items:
-                                    row = {**metadata, **item, "file_name": file.name, "source": "local"}
-                                    all_data.append(row)
-                            
-                            processed_count += 1
-                            progress_bar.progress(processed_count / total_files)
-                            time.sleep(0.1)
-                    
-                    # Process Drive files
-                    if drive_files and drive_authenticated:
-                        status_text.text("☁️ Processing Google Drive files...")
-                        for file in drive_files:
-                            status_text.text(f"Processing Drive: {file['name']}")
-                            
-                            # Download file from Drive
-                            pdf_bytes = processor.download_from_drive(file['id'])
-                            if pdf_bytes:
-                                text = processor.extract_text_from_pdf(pdf_bytes)
+                            # Download file
+                            file_data = processor.download_from_drive(file['id'])
+                            if file_data:
+                                text = processor.extract_text_from_pdf(file_data)
                                 metadata, items = processor.extract_grn_data(text, file['name'])
                                 
                                 if not items:
@@ -882,46 +800,51 @@ elif st.session_state.workflow_mode == "combined":
                                     all_data.append(row)
                                 else:
                                     for item in items:
-                                        row = {**metadata, **item, "file_name": file['name'], 
-                                               "source": "drive", "drive_file_id": file['id']}
+                                        row = {**metadata, **item, 
+                                               "file_name": file['name'], 
+                                               "source": "drive",
+                                               "drive_file_id": file['id']}
                                         all_data.append(row)
                             
-                            processed_count += 1
-                            progress_bar.progress(processed_count / total_files)
+                            progress_bar.progress((i + 1) / len(drive_files))
                             time.sleep(0.1)
-                    
-                    status_text.text("✅ Combined processing complete!")
-                    
-                    if all_data:
-                        st.session_state.df_result = pd.DataFrame(all_data)
-                        st.session_state.processing_complete = True
-                        st.success("🎉 All files processed successfully!")
-                    else:
-                        st.session_state.df_result = pd.DataFrame()
-                        st.warning("⚠️ No data could be extracted from any files.")
+                        
+                        status_text.text("✅ Processing complete!")
+                        
+                        if all_data:
+                            st.session_state.df_result = pd.DataFrame(all_data)
+                            st.session_state.processing_complete = True
+                            st.session_state.sheets_uploaded = False
+                            st.success("🎉 All Drive files processed successfully!")
+                        else:
+                            st.session_state.df_result = pd.DataFrame()
+                            st.warning("⚠️ No data could be extracted from the Drive files.")
+        else:
+            st.warning("📂 No PDF files found in the specified Google Drive folder.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Results Display Section
+# Results Section (shown for both workflows)
 if st.session_state.processing_complete and st.session_state.df_result is not None:
     st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-    st.markdown("### 📊 Processing Results")
+    st.markdown('<div class="section-header"><span class="section-icon">📊</span>Processing Results</div>', unsafe_allow_html=True)
     
-    if not st.session_state.df_result.empty:
-        # Results metrics
+    df = st.session_state.df_result
+    
+    if not df.empty:
+        # Results Metrics
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            total_rows = len(st.session_state.df_result)
             st.markdown(f"""
             <div class="metric-card">
-                <span class="metric-value">{total_rows}</span>
+                <span class="metric-value">{len(df)}</span>
                 <div class="metric-label">Total Records</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
-            unique_grns = st.session_state.df_result['GRN No'].nunique() if 'GRN No' in st.session_state.df_result.columns else 0
+            unique_grns = df['GRN No'].nunique() if 'GRN No' in df.columns else 0
             st.markdown(f"""
             <div class="metric-card">
                 <span class="metric-value">{unique_grns}</span>
@@ -930,7 +853,7 @@ if st.session_state.processing_complete and st.session_state.df_result is not No
             """, unsafe_allow_html=True)
         
         with col3:
-            unique_files = st.session_state.df_result['file_name'].nunique() if 'file_name' in st.session_state.df_result.columns else 0
+            unique_files = df['file_name'].nunique() if 'file_name' in df.columns else 0
             st.markdown(f"""
             <div class="metric-card">
                 <span class="metric-value">{unique_files}</span>
@@ -939,184 +862,120 @@ if st.session_state.processing_complete and st.session_state.df_result is not No
             """, unsafe_allow_html=True)
         
         with col4:
-            # Check if source column exists (for combined workflow)
-            if 'source' in st.session_state.df_result.columns:
-                local_count = len(st.session_state.df_result[st.session_state.df_result['source'] == 'local'])
-                drive_count = len(st.session_state.df_result[st.session_state.df_result['source'] == 'drive'])
-                source_info = f"L:{local_count} D:{drive_count}"
-            else:
-                source_info = "Single"
-            
+            success_rate = (df['GRN No'].notna().sum() / len(df) * 100) if 'GRN No' in df.columns else 0
             st.markdown(f"""
             <div class="metric-card">
-                <span class="metric-value" style="font-size: 1.8rem;">{source_info}</span>
-                <div class="metric-label">Source Split</div>
+                <span class="metric-value">{success_rate:.1f}%</span>
+                <div class="metric-label">Success Rate</div>
             </div>
             """, unsafe_allow_html=True)
         
         # Data Preview
-        st.markdown("#### 👁️ Data Preview")
+        st.markdown("#### 🔍 Data Preview")
+        st.dataframe(df.head(20), use_container_width=True, height=400)
         
-        # Filter options
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if 'GRN No' in st.session_state.df_result.columns:
-                grn_filter = st.selectbox(
-                    "Filter by GRN No:",
-                    ['All'] + list(st.session_state.df_result['GRN No'].dropna().unique())
-                )
-            else:
-                grn_filter = 'All'
-        
-        with col2:
-            if 'source' in st.session_state.df_result.columns:
-                source_filter = st.selectbox(
-                    "Filter by Source:",
-                    ['All', 'local', 'drive']
-                )
-            else:
-                source_filter = 'All'
-        
-        # Apply filters
-        filtered_df = st.session_state.df_result.copy()
-        
-        if grn_filter != 'All':
-            filtered_df = filtered_df[filtered_df['GRN No'] == grn_filter]
-        
-        if source_filter != 'All' and 'source' in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df['source'] == source_filter]
-        
-        # Display filtered data
-        st.dataframe(filtered_df, use_container_width=True, height=400)
-        
-        # Download Section
-        st.markdown("#### 📥 Download Options")
-        
+        # Download and Upload Options
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Excel download
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                filtered_df.to_excel(writer, sheet_name='GRN_Data', index=False)
-                
-                # Add summary sheet if we have multiple sources
-                if 'source' in st.session_state.df_result.columns:
-                    summary_data = {
-                        'Metric': ['Total Records', 'Local Files', 'Drive Files', 'Unique GRNs'],
-                        'Value': [
-                            len(st.session_state.df_result),
-                            len(st.session_state.df_result[st.session_state.df_result['source'] == 'local']),
-                            len(st.session_state.df_result[st.session_state.df_result['source'] == 'drive']),
-                            st.session_state.df_result['GRN No'].nunique()
-                        ]
-                    }
-                    summary_df = pd.DataFrame(summary_data)
-                    summary_df.to_excel(writer, sheet_name='Summary', index=False)
-            
-            processed_data = output.getvalue()
-            
-            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"grn_data_{current_time}.xlsx"
-            
+            # Download as CSV
+            csv = df.to_csv(index=False)
             st.download_button(
-                label="📊 Download Excel",
-                data=processed_data,
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Download the processed data as Excel file"
+                label="📥 Download CSV",
+                data=csv,
+                file_name=f"grn_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_csv"
             )
         
         with col2:
-            # CSV download
-            csv_data = filtered_df.to_csv(index=False)
-            csv_filename = f"grn_data_{current_time}.csv"
+            # Download as Excel
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='GRN_Data', index=False)
             
             st.download_button(
-                label="📄 Download CSV",
-                data=csv_data,
-                file_name=csv_filename,
-                mime="text/csv",
-                help="Download the processed data as CSV file"
+                label="📊 Download Excel",
+                data=buffer.getvalue(),
+                file_name=f"grn_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_excel"
             )
         
         with col3:
-            # JSON download
-            json_data = filtered_df.to_json(orient='records', indent=2)
-            json_filename = f"grn_data_{current_time}.json"
-            
-            st.download_button(
-                label="🔗 Download JSON",
-                data=json_data,
-                file_name=json_filename,
-                mime="application/json",
-                help="Download the processed data as JSON file"
-            )
-        
-        # Data Quality Report
-        with st.expander("📈 Data Quality Report", expanded=False):
-            st.markdown("#### Data Completeness Analysis")
-            
-            # Calculate completeness for key fields
-            key_fields = ['GRN No', 'GRN Date', 'Vendor Invoice No', 'PO No', 'Consignee Location']
-            completeness_data = []
-            
-            for field in key_fields:
-                if field in st.session_state.df_result.columns:
-                    total = len(st.session_state.df_result)
-                    non_null = st.session_state.df_result[field].notna().sum()
-                    non_empty = (st.session_state.df_result[field].astype(str).str.strip() != '').sum()
-                    completeness = (non_empty / total) * 100 if total > 0 else 0
+            # Upload to Google Sheets
+            if not st.session_state.sheets_uploaded:
+                if st.button("📋 Upload to Google Sheets", key="upload_sheets_btn"):
+                    processor = RelianceGRNProcessor()
                     
-                    completeness_data.append({
-                        'Field': field,
-                        'Total Records': total,
-                        'Non-Empty': non_empty,
-                        'Completeness %': f"{completeness:.1f}%"
-                    })
-            
-            if completeness_data:
-                completeness_df = pd.DataFrame(completeness_data)
-                st.dataframe(completeness_df, use_container_width=True)
-            
-            # File processing summary
-            if 'file_name' in st.session_state.df_result.columns:
-                st.markdown("#### File Processing Summary")
-                file_summary = st.session_state.df_result.groupby('file_name').size().reset_index(name='Records Extracted')
-                file_summary = file_summary.sort_values('Records Extracted', ascending=False)
-                st.dataframe(file_summary, use_container_width=True)
+                    # Re-authenticate if needed
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    if processor.authenticate_from_secrets(progress_bar, status_text):
+                        # Convert DataFrame to list of dictionaries
+                        data_list = df.to_dict('records')
+                        
+                        # Upload to the hardcoded sheet
+                        sheet_id = HARDCODED_CONFIG['drive_to_sheet']['sheet_id']
+                        
+                        if processor.append_to_sheet(sheet_id, data_list, progress_bar, status_text):
+                            st.session_state.sheets_uploaded = True
+                            st.rerun()
+                    else:
+                        st.error("❌ Authentication failed. Cannot upload to Google Sheets.")
+            else:
+                st.markdown('<div class="status-success">✅ Data uploaded to Google Sheets!</div>', unsafe_allow_html=True)
     
     else:
-        st.warning("⚠️ No data was extracted from the processed files. Please check your PDF files and try again.")
+        st.warning("⚠️ No data was extracted from the processed files.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Reset/Clear Section
-if st.session_state.processing_complete:
-    st.markdown('<div class="glass-card animate-fade-in">', unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("🔄 Process New Files", key="reset_btn", help="Clear current results and process new files"):
-            # Reset session state
-            st.session_state.df_result = None
-            st.session_state.file_count = 0
-            st.session_state.processing_complete = False
-            st.session_state.workflow_mode = None
-            # Clear OAuth token if needed
-            if 'oauth_token' in st.session_state:
-                del st.session_state.oauth_token
-            st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Footer
+# Footer Information
 st.markdown("""
-<div style="text-align: center; margin-top: 3rem; padding: 2rem; color: #64748b;">
-    <p>📦 <strong>GRN Parser Pro+</strong> - Streamline your goods receipt processing workflow</p>
-    <p style="font-size: 0.9rem; opacity: 0.8;">
-        Built with ❤️ using Streamlit • Enhanced PDF processing • Google Drive integration
-    </p>
+<div class="glass-card animate-fade-in">
+    <div style="text-align: center; padding: 1rem;">
+        <h4 style="color: #667eea; margin-bottom: 1rem;">📋 Processing Summary</h4>
+        <p style="color: #64748b; margin-bottom: 0.5rem;">
+            This application processes Reliance GRN (Goods Receipt Note) PDFs and extracts structured data including:
+        </p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
+            <div style="background: rgba(102, 126, 234, 0.1); padding: 0.5rem; border-radius: 8px;">
+                <strong>📄 Document Info:</strong><br>GRN Number, Date, PO Details
+            </div>
+            <div style="background: rgba(102, 126, 234, 0.1); padding: 0.5rem; border-radius: 8px;">
+                <strong>🚚 Logistics:</strong><br>Truck Number, Challan Details
+            </div>
+            <div style="background: rgba(102, 126, 234, 0.1); padding: 0.5rem; border-radius: 8px;">
+                <strong>📦 Items:</strong><br>Article Details, Quantities, MRP
+            </div>
+            <div style="background: rgba(102, 126, 234, 0.1); padding: 0.5rem; border-radius: 8px;">
+                <strong>🏢 Location:</strong><br>Consignee Information
+            </div>
+        </div>
+        <p style="color: #64748b; font-size: 0.9rem; margin-top: 1rem;">
+            <strong>Supported Formats:</strong> PDF files with structured GRN layouts<br>
+            <strong>Output Options:</strong> CSV, Excel, Google Sheets integration
+        </p>
+    </div>
 </div>
 """, unsafe_allow_html=True)
+
+# Clear data button
+if st.session_state.processing_complete:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🗑️ Clear All Data", key="clear_data_btn", help="Clear all processed data and start fresh"):
+            st.session_state.df_result = None
+            st.session_state.processing_complete = False
+            st.session_state.sheets_uploaded = False
+            st.success("✅ All data cleared successfully!")
+            st.rerun()
+
+# Debug information (only shown in development)
+if st.query_params.get("debug") == "true":
+    st.markdown("---")
+    st.markdown("### 🔧 Debug Information")
+    st.write("Session State:", st.session_state)
+    st.write("Query Params:", dict(st.query_params))
